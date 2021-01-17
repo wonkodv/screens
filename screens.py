@@ -5,21 +5,25 @@ Configure Screens according to provided Setups, or the first setup that matches
 all the connected devices or a default.  Default will enable all connected
 devices and place them in a row in the order that xrandr reports them.
 
-Other configurations are put in the SETUPS dict, which maps a  name to a list of
-lists with device names plus xrandr options for that device.
+Other configurations are put in the SETUPS dict, which maps a  name to a list of lists with device
+names plus xrandr options for that device.
 """
 
-import subprocess
 import re
-import functools
+import subprocess
 import time
 
 SETUPS = {
-    'work': [
-            ['DisplayPort-3', '--primary'],
-            ['DisplayPort-2', '--right-of', 'DisplayPort-3'],
-            ['eDP', '--below', 'DisplayPort-3'],
-    ]
+    "2": [
+        ["DisplayPort-3", "--primary"],
+        ["DisplayPort-2", "--right-of", "DisplayPort-3"],
+        ["eDP", "--off"],
+    ],
+    "3": [
+        ["DisplayPort-3", "--primary"],
+        ["DisplayPort-2", "--right-of", "DisplayPort-3"],
+        ["eDP", "--below", "DisplayPort-3"],
+    ],
 }
 
 
@@ -28,13 +32,15 @@ def get_setup_names():
 
 
 def call(args):
-    p = subprocess.Popen(['xrandr', *args],
-                         stdout=subprocess.PIPE,
-                         stdin=subprocess.DEVNULL,
-                         universal_newlines=True,
-                         )
+    p = subprocess.Popen(
+        ["xrandr", *args],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        stdin=subprocess.DEVNULL,
+        universal_newlines=True,
+    )
     if not p.wait() == 0:
-        raise IOError(args, p.returncode, p.stdout.read(), p.stderr.read())
+        raise Exception(" ".join(args), p.returncode, p.stdout.read(), p.stderr.read())
     return p.stdout.read()
 
 
@@ -42,7 +48,7 @@ _devices_cache = (0, None)
 
 
 def devices():
-    """ Get Dict of all devices to whether they are connected.
+    """Get Dict of all devices to whether they are connected.
 
     Results are cached for 1 Second because multiple calls would just take up
     time, but the result could change after a while.
@@ -54,11 +60,8 @@ def devices():
     if t2 - t > 1:
         text = call(())
         devs = {
-            dev: not dis for (dev, dis) in re.findall(
-                r"^([^\s]*)\s+(dis)?connected",
-                text,
-                re.M
-            )
+            dev: not dis
+            for (dev, dis) in re.findall(r"^([^\s]*)\s+(dis)?connected", text, re.M)
         }
         _devices_cache = (t2, devs)
     return devs
@@ -83,9 +86,9 @@ def default_setup():
     for dev, connected in devices().items():
         if connected:
             if prev is None:
-                setup.append([dev, '--primary'])
+                setup.append([dev, "--primary"])
             else:
-                setup.append([dev, '--right-of', prev])
+                setup.append([dev, "--right-of", prev])
             prev = dev
     return setup
 
@@ -104,16 +107,23 @@ def setup_to_args(s):
     args = []
     off_devs = set(devices())
     for (device, *options) in s:
-        args += "--output", device, '--preferred',
+        args += (
+            "--output",
+            device,
+        )
+        if not any(o in options for o in ("--off", "--mode")):
+            args += ("--preferred",)
+
         args += options
         off_devs.remove(device)
     for d in off_devs:
-        args += '--output', d, '--off'
+        args += "--output", d, "--off"
     return args
 
 
 def main(setup=None):
     s = get_setup(setup)
     a = setup_to_args(s)
+    print(" ".join(a))
     call(a)
     return 0
